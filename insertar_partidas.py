@@ -8,16 +8,8 @@ from datetime import datetime
 # ==========================================
 # CONFIGURACIÓN DE SUPABASE
 # ==========================================
-SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
+SUPABASE_URL = "https://supabase.co" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
-
-# Cabeceras estándar compatibles con tu base de datos
-HEADERS = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
-}
 
 st.set_page_config(page_title="Introducir Partidas - Liga Mahjong Madrid", page_icon="🎴")
 st.title("🀄 Introducir Nueva Partida")
@@ -29,7 +21,6 @@ st.title("🀄 Introducir Nueva Partida")
 def obtener_jugadores():
     """Trae la lista de jugadores directamente de la tabla jugadores."""
     try:
-        # Petición GET limpia idéntica al funcionamiento de tu app lectora
         url = f"{SUPABASE_URL}/jugadores?select=id,nombre,nombre_real&order=nombre.asc"
         req = urllib.request.Request(url, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}, method="GET")
         with urllib.request.urlopen(req) as response:
@@ -38,20 +29,33 @@ def obtener_jugadores():
         st.error(f"Error al cargar jugadores de la base de datos: {e}")
         return []
 
-def insertar_registro(tabla, datos):
-    """Inserta datos en la tabla correspondiente y captura la respuesta nativa."""
+def insertar_registro(tabla, datos, devolver_representacion=True):
+    """Inserta datos en la tabla correspondiente adaptando las cabeceras según el tipo de inserción."""
     try:
         url = f"{SUPABASE_URL}/{tabla}"
         data_json = json.dumps(datos).encode("utf-8")
-        req = urllib.request.Request(url, data=data_json, headers=HEADERS, method="POST")
+        
+        # Construimos las cabeceras estándar compatibles
+        cabeceras = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        # Solo usamos return=representation para la partida individual para capturar su ID.
+        # Para los resultados en lote (bulk insert), dejamos que la base de datos gestione los IDs sola.
+        if devolver_representacion:
+            cabeceras["Prefer"] = "return=representation"
+            
+        req = urllib.request.Request(url, data=data_json, headers=cabeceras, method="POST")
         
         with urllib.request.urlopen(req) as response:
             res_body = response.read().decode()
-            return json.loads(res_body)
+            return json.loads(res_body) if res_body else True
     except urllib.error.HTTPError as e:
-        if e.code == 200 or e.code == 201:
+        if e.code in (200, 201, 204):
             res_body = e.read().decode()
-            return json.loads(res_body)
+            return json.loads(res_body) if res_body else True
         else:
             res_err = e.read().decode()
             st.error(f"Error en la tabla '{tabla}' (Código {e.code}): {res_err}")
@@ -69,7 +73,6 @@ if not lista_jugadores:
     st.warning("Cargando base de datos... Si el error persiste, comprueba la clave 'SUPABASE_KEY' en tus Secrets de Streamlit.")
     st.stop()
 
-# Procesamos el concat pedido: Nombre (Nombre Real)
 dict_jugadores = {}
 nombres_para_combo = []
 
@@ -162,11 +165,17 @@ if enviar:
     }
     
     with st.spinner("Guardando los datos de la partida..."):
-        respuesta_partida = insertar_registro("partidas", datos_partida)
+        # Para la partida usamos True para capturar el ID devuelto
+        respuesta_partida = insertar_registro("partidas", datos_partida, devolver_representacion=True)
         
     if respuesta_partida:
-        # Extraemos el registro de la partida creada
-        registro_partida = respuesta_partida[0] if isinstance(respuesta_partida, list) else respuesta_partida
+        if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0:
+            registro_partida = respuesta_partida[0]
+        elif isinstance(respuesta_partida, dict):
+            registro_partida = respuesta_partida
+        else:
+            registro_partida = {}
+            
         partida_id_generado = registro_partida.get("id")
         
         if partida_id_generado:
@@ -187,12 +196,13 @@ if enviar:
                 })
                 
             with st.spinner("Guardando los desgloses de puntuación..."):
-                respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados)
+                # Para los resultados usamos False para evitar conflictos con IDs autoincrementales viejos
+                respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados, devolver_representacion=False)
                 
             if respuesta_resultados:
                 st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
                 st.balloons()
         else:
-            st.error("La respuesta de Supabase no devolvió un ID numérico válido.")
+            st.error("La respuesta de Supabase no devolvió un ID numérico válido. Es posible que el registro ya exista.")
     else:
         st.error("No se pudo insertar la partida. Comprueba los permisos de escritura de tu clave de Supabase.")
