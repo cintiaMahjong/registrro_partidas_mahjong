@@ -30,10 +30,10 @@ HEADERS_BASE = {
 }
 
 st.markdown(""" 
+st.markdown(""" 
 <style> 
 /* ========================================================= 
    MAHJONG MADRID - DISEÑO LIMPIO Y RESPONSIVE 
-   Escritorio y móvil se diseñan por separado mediante media queries. 
 ========================================================= */ 
 * { box-sizing: border-box; } 
  
@@ -98,7 +98,7 @@ except Exception as e:
     st.error(f"Error al cargar jugadores: {e}")
 
 # ==========================================
-# 2. CALCULAR MAX ID DE RESULTADOS (Para solucionar el error 409 de Postgres)
+# 2. CALCULAR MAX ID DE RESULTADOS 
 # ==========================================
 max_id_resultados = 0
 try:
@@ -107,17 +107,18 @@ try:
     with urllib.request.urlopen(req_m) as resp_m:
         res_m = json.loads(resp_m.read().decode())
         if res_m and len(res_m) > 0:
-            max_id_resultados = int(res_m[0]["id"])
+            max_id_resultados = int(res_m["id"])
 except Exception:
     max_id_resultados = 0
 
-# Procesa la lista de jugadores y fuerza el Concat Nombre (Nombre Real)
 if not lista_jugadores:
     st.warning("No se pudieron recuperar los jugadores de la base de datos.")
     st.stop()
 
 dict_jugadores = {}
-nombres_para_combo = []
+# MODIFICACIÓN: La lista para el combo empieza con la opción de instrucción vacía
+nombres_para_combo = ["-- Selecciona un jugador --"]
+
 for j in lista_jugadores:
     n = j.get("nombre") or ""
     nr = j.get("nombre_real") or ""
@@ -182,11 +183,11 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
         c1, c2 = st.columns(2)
         
         with c1:
-            idx_defecto = min(i, len(nombres_para_combo) - 1)
+            # MODIFICACIÓN: index=0 fuerza a que por defecto aparezca el texto de instrucción vacío
             jugador = st.selectbox(
                 f"Selecciona al jugador {i+1}:", 
                 nombres_para_combo, 
-                index=idx_defecto, 
+                index=0, 
                 key=f"jugador_{i}"
             )
             jugadores_seleccionados.append(jugador)
@@ -201,11 +202,15 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
             puntuaciones.append(puntos)
 
     enviar = st.form_submit_button("Guardar Partida y Resultados")
-
 # ==========================================
 # 3. PROCESAMIENTO Y ENVÍO A SUPABASE
 # ==========================================
 if enviar:
+    # MODIFICACIÓN: Validar si falta algún jugador por seleccionar
+    if "-- Selecciona un jugador --" in jugadores_seleccionados:
+        st.error("Error: Tienes que seleccionar un jugador válido para todas las posiciones.")
+        st.stop()
+        
     if len(jugadores_seleccionados) != len(set(jugadores_seleccionados)):
         st.error("Error: No puedes duplicar al mismo jugador en varias posiciones.")
         st.stop()
@@ -227,7 +232,7 @@ if enviar:
         req_p = urllib.request.Request(url_p, data=json.dumps(datos_partida).encode("utf-8"), headers=headers_p, method="POST")
         with urllib.request.urlopen(req_p) as resp_p:
             res_p = json.loads(resp_p.read().decode())
-            registro_partida = res_p[0] if isinstance(res_p, list) and len(res_p) > 0 else res_p
+            registro_partida = res_p if isinstance(res_p, list) and len(res_p) > 0 else res_p
             partida_id_generado = registro_partida.get("id")
             partida_guardada = True
     except Exception as e:
