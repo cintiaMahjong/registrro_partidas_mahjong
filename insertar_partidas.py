@@ -20,7 +20,7 @@ st.set_page_config(
     page_icon=RUTA_LOGO if os.path.exists(RUTA_LOGO) else "🀄",
     layout="centered"
 )
-SUPABASE_URL = "https://supabase.co" 
+SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 # Cabeceras estándar usando tu clave secreta de las Secrets
