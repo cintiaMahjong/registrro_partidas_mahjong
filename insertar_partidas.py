@@ -25,11 +25,10 @@ st.title("🀄 Introducir Nueva Partida")
 # ==========================================
 # FUNCIONES DE CONEXIÓN A LA BASE DE DATOS
 # ==========================================
-@st.cache_data(ttl=10)
+# AJUSTADO: Eliminamos el decorador de caché temporalmente para forzar a Streamlit a leer 'nombre_real' de Supabase
 def obtener_jugadores():
-    """Trae la lista de jugadores directamente de la tabla jugadores."""
+    """Trae la lista de jugadores directamente de la tabla jugadores con los campos del concat."""
     try:
-        # Petición GET limpia idéntica al funcionamiento de tu app lectora
         url = f"{SUPABASE_URL}/jugadores?select=id,nombre,nombre_real&order=nombre.asc"
         req = urllib.request.Request(url, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}, method="GET")
         with urllib.request.urlopen(req) as response:
@@ -38,20 +37,30 @@ def obtener_jugadores():
         st.error(f"Error al cargar jugadores de la base de datos: {e}")
         return []
 
-def insertar_registro(tabla, datos):
+# AJUSTADO: Añadimos un parámetro opcional para limpiar la cabecera Prefer al meter los jugadores y evitar fallos
+def insertar_registro(tabla, datos, usar_prefer=True):
     """Inserta datos en la tabla correspondiente y captura la respuesta nativa."""
     try:
         url = f"{SUPABASE_URL}/{tabla}"
         data_json = json.dumps(datos).encode("utf-8")
-        req = urllib.request.Request(url, data=data_json, headers=HEADERS, method="POST")
+        
+        cabeceras_post = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
+        if usar_prefer:
+            cabeceras_post["Prefer"] = "return=representation"
+            
+        req = urllib.request.Request(url, data=data_json, headers=cabeceras_post, method="POST")
         
         with urllib.request.urlopen(req) as response:
             res_body = response.read().decode()
-            return json.loads(res_body)
+            return json.loads(res_body) if res_body else True
     except urllib.error.HTTPError as e:
-        if e.code == 200 or e.code == 201:
+        if e.code in (200, 201, 204):
             res_body = e.read().decode()
-            return json.loads(res_body)
+            return json.loads(res_body) if res_body else True
         else:
             res_err = e.read().decode()
             st.error(f"Error en la tabla '{tabla}' (Código {e.code}): {res_err}")
@@ -77,7 +86,7 @@ for j in lista_jugadores:
     nombre = j.get("nombre") or ""
     nombre_real = j.get("nombre_real") or ""
     
-    if nombre_real and nombre_real != nombre:
+    if nombre_real and nombre_real.strip() != "" and nombre_real != nombre:
         nombre_mostrar = f"{nombre} ({nombre_real})"
     else:
         nombre_mostrar = nombre
@@ -162,12 +171,11 @@ if enviar:
     }
     
     with st.spinner("Guardando los datos de la partida..."):
-        respuesta_partida = insertar_registro("partidas", datos_partida)
+        respuesta_partida = insertar_registro("partidas", datos_partida, usar_prefer=True)
         
     if respuesta_partida:
-        # Extraemos el registro de la partida creada
-        registro_partida = respuesta_partida[0] if isinstance(respuesta_partida, list) else respuesta_partida
-        partida_id_generado = registro_partida.get("id")
+        registro_partida = respuesta_partida[0] if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0 else respuesta_partida
+        partida_id_generado = registro_partida.get("id") if isinstance(registro_partida, dict) else None
         
         if partida_id_generado:
             st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
@@ -187,7 +195,8 @@ if enviar:
                 })
                 
             with st.spinner("Guardando los desgloses de puntuación..."):
-                respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados)
+                # AJUSTADO: Cambiamos usar_prefer=False aquí para que Postgres asigne las claves primarias sin errores de duplicación
+                respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados, usar_prefer=False)
                 
             if respuesta_resultados:
                 st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
