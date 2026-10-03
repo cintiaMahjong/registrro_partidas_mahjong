@@ -17,12 +17,19 @@ st.title("🀄 Introducir Nueva Partida")
 # ==========================================
 # FUNCIONES DE CONEXIÓN A LA BASE DE DATOS
 # ==========================================
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5) # Reducimos el tiempo al mínimo para evitar bloqueos por caché
 def obtener_jugadores():
-    """Trae la lista de jugadores directamente de la tabla jugadores."""
+    """Trae la lista de jugadores de forma directa y limpia."""
     try:
         url = f"{SUPABASE_URL}/jugadores?select=id,nombre,nombre_real&order=nombre.asc"
-        req = urllib.request.Request(url, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}, method="GET")
+        req = urllib.request.Request(
+            url, 
+            headers={
+                "apikey": SUPABASE_KEY, 
+                "Authorization": f"Bearer {SUPABASE_KEY}"
+            }, 
+            method="GET"
+        )
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read().decode())
     except Exception as e:
@@ -35,15 +42,12 @@ def insertar_registro(tabla, datos, devolver_representacion=True):
         url = f"{SUPABASE_URL}/{tabla}"
         data_json = json.dumps(datos).encode("utf-8")
         
-        # Construimos las cabeceras estándar compatibles
         cabeceras = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json"
         }
         
-        # Solo usamos return=representation para la partida individual para capturar su ID.
-        # Para los resultados en lote (bulk insert), dejamos que la base de datos gestione los IDs sola.
         if devolver_representacion:
             cabeceras["Prefer"] = "return=representation"
             
@@ -165,7 +169,6 @@ if enviar:
     }
     
     with st.spinner("Guardando los datos de la partida..."):
-        # Para la partida usamos True para capturar el ID devuelto
         respuesta_partida = insertar_registro("partidas", datos_partida, devolver_representacion=True)
         
     if respuesta_partida:
@@ -196,13 +199,12 @@ if enviar:
                 })
                 
             with st.spinner("Guardando los desgloses de puntuación..."):
-                # Para los resultados usamos False para evitar conflictos con IDs autoincrementales viejos
                 respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados, devolver_representacion=False)
                 
             if respuesta_resultados:
                 st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
                 st.balloons()
         else:
-            st.error("La respuesta de Supabase no devolvió un ID numérico válido. Es posible que el registro ya exista.")
+            st.error("La respuesta de Supabase no devolvió un ID numérico válido.")
     else:
         st.error("No se pudo insertar la partida. Comprueba los permisos de escritura de tu clave de Supabase.")
