@@ -147,12 +147,18 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
     st.markdown("---")
     st.subheader("2. Resultados de los Jugadores")
     
-    num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
+    # EL ÚNICO CAMBIO AQUÍ: Permitir elegir entre 4 o 5 si se selecciona MCR
+    if tipo_juego == "RIICHI":
+        num_jugadores = 4
+    else:
+        num_jugadores = st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
+        
     st.info("Introduce los jugadores por orden estricto de clasificación: del 1º arriba hasta el último abajo.")
     
     jugadores_seleccionados = []
     puntuaciones = []
     
+    # El rango ahora se adapta automáticamente a 4 o a 5 jugadores
     for i in range(int(num_jugadores)):
         st.markdown(f"**Posición {i+1}**")
         c1, c2 = st.columns(2)
@@ -244,5 +250,5 @@ if enviar:
                     st.error(f"Error guardando el resultado del jugador {nombre_visual}: {e}")
                     
         if exito_jugadores:
-            st.success(f"✓ ¡Todos los {num_jugadores} resultados se han enlazado y guardado correctamente!")
+            st.success(f"✓ ¡Todos los {int(num_jugadores)} resultados se han enlazado y guardado correctamente!")
             st.balloons()
