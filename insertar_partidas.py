@@ -1,5 +1,6 @@
 import streamlit as st
 import urllib.request
+import urllib.error
 import urllib.parse
 import json
 from datetime import datetime
@@ -7,22 +8,21 @@ from datetime import datetime
 # ==========================================
 # CONFIGURACIÓN DE SUPABASE
 # ==========================================
-SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
+SUPABASE_URL = "https://supabase.co" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
 
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    # Cambiamos a 'return=representation' combinado con 'exact' o manejado de forma que devuelva objeto puro
-    "Prefer": "return=representation"  
+    "Prefer": "return=representation"  # Devuelve el objeto creado con su ID autogenerado
 }
 
 st.set_page_config(page_title="Introducir Partidas - Liga Mahjong Madrid", page_icon="🎴")
 st.title("🀄 Introducir Nueva Partida")
 
 # ==========================================
-# FUNCIONES DE CONEXIÓN CORREGIDAS PARA URLLIB
+# FUNCIONES DE CONEXIÓN CORREGIDAS
 # ==========================================
 @st.cache_data(ttl=60)
 def obtener_jugadores():
@@ -37,19 +37,17 @@ def obtener_jugadores():
         return []
 
 def insertar_registro(tabla, datos):
-    """Inserta datos en Supabase sorteando el problema del código 201 de urllib."""
+    """Inserta datos en Supabase y maneja de forma segura las respuestas de urllib."""
     try:
         url = f"{SUPABASE_URL}/{tabla}"
         data_json = json.dumps(datos).encode("utf-8")
         req = urllib.request.Request(url, data=data_json, headers=HEADERS, method="POST")
         
-        # urllib lanza una excepción HTTPError si el código es 201 (Created)
-        # Lo capturamos de forma segura para leer los datos devueltos
         with urllib.request.urlopen(req) as response:
             res_body = response.read().decode()
             return json.loads(res_body)
     except urllib.error.HTTPError as e:
-        # Si es un 201 Created (o 200), leemos el cuerpo del mensaje de todas formas
+        # CORREGIDO: Verificamos los códigos correctos de creación exitosa en Supabase
         if e.code in:
             res_body = e.read().decode()
             return json.loads(res_body)
@@ -85,12 +83,27 @@ with st.form("formulario_partida", clear_on_submit=False):
         temporada = st.text_input("Temporada:", value="Oct 2026 - Sept 2027", disabled=True)
         
     fecha = st.date_input("Fecha de la partida:", datetime.today())
-    nombre_partida = st.text_input("Nombre de la partida:", placeholder="Ej: RIICHI-20261003-Mesa 1")
     
+    # Automatización del nombre para evitar errores tipográficos
+    col_aux1, col_aux2 = st.columns([3, 1])
+    with col_aux1:
+        n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=20, value=1, step=1)
+    
+    # Genera el string con la estructura visual exacta de tus capturas
+    fecha_str = fecha.strftime("%Y%m%d")
+    nombre_partida_auto = f"{tipo_juego}-{fecha_str}-Mesa {n_mesa}"
+    
+    with col_aux2:
+        st.write("") # Espaciador
+        st.write("") 
+        st.caption(f"Identificador: **{nombre_partida_auto}**")
+
     st.markdown("---")
     st.subheader("2. Resultados de los Jugadores")
     
     num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
+    
+    st.info("Introduce los jugadores siguiendo rigurosamente su orden final: el 1º arriba hasta el último abajo.")
     
     jugadores_seleccionados = []
     puntuaciones = []
@@ -124,10 +137,6 @@ with st.form("formulario_partida", clear_on_submit=False):
 # PROCESAMIENTO Y ENVÍO A SUPABASE
 # ==========================================
 if enviar:
-    if not nombre_partida.strip():
-        st.error("Por favor, introduce un nombre para la partida.")
-        st.stop()
-        
     if len(jugadores_seleccionados) != len(set(jugadores_seleccionados)):
         st.error("Error: No puedes seleccionar al mismo jugador en múltiples posiciones.")
         st.stop()
@@ -135,37 +144,43 @@ if enviar:
     datos_partida = {
         "fecha": str(fecha),
         "tipo_juego": tipo_juego,
-        "nombre": nombre_partida.strip(),
+        "nombre": nombre_partida_auto,
         "temporada": "Oct 2026 - Sept 2027"
     }
     
     with st.spinner("Guardando los datos de la partida..."):
         respuesta_partida = insertar_registro("partidas", datos_partida)
         
-    if respuesta_partida and len(respuesta_partida) > 0:
-        # Supabase devuelve una lista con el registro creado cuando se usa return=representation
-        partida_id_generado = respuesta_partida[0]["id"]
-        st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
+    # Validamos que Supabase devuelva la lista/objeto correcto con los datos
+    if respuesta_partida:
+        # Dependiendo del retorno exacto, extraemos el diccionario
+        registro_partida = respuesta_partida[0] if isinstance(respuesta_partida, list) else respuesta_partida
+        partida_id_generado = registro_partida.get("id")
         
-        registros_resultados = []
-        for i in range(int(num_jugadores)):
-            nombre_jugador = jugadores_seleccionados[i]
-            jugador_id = dict_jugadores[nombre_jugador]
-            puntos_jugador = puntuaciones[i]
-            posicion_ranking = i + 1
+        if partida_id_generado:
+            st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
             
-            registros_resultados.append({
-                "partida_id": partida_id_generado,
-                "jugador_id": jugador_id,
-                "posicion": posicion_ranking,
-                "puntuacion": puntos_jugador
-            })
-            
-        with st.spinner("Guardando los desgloses de puntuación..."):
-            respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados)
-            
-        if respuesta_resultados:
-            st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
-            st.balloons()
+            registros_resultados = []
+            for i in range(int(num_jugadores)):
+                nombre_jugador = jugadores_seleccionados[i]
+                jugador_id = dict_jugadores[nombre_jugador]
+                puntos_jugador = puntuaciones[i]
+                posicion_ranking = i + 1
+                
+                registros_resultados.append({
+                    "partida_id": partida_id_generado,
+                    "jugador_id": jugador_id,
+                    "posicion": posicion_ranking,
+                    "puntuacion": puntos_jugador
+                })
+                
+            with st.spinner("Guardando los desgloses de puntuación..."):
+                respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados)
+                
+            if respuesta_resultados:
+                st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
+                st.balloons()
+        else:
+            st.error("La respuesta de Supabase no contenía un ID válido.")
     else:
-        st.error("No se pudo obtener la respuesta correcta de Supabase al crear la partida.")
+        st.error("No se pudo obtener una respuesta correcta de Supabase al crear la partida.")
