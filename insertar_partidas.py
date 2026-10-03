@@ -1,101 +1,135 @@
 import streamlit as st
+import pandas as pd
 import urllib.request
 import urllib.error
 import urllib.parse
 import json
+import os
+import html
 from datetime import datetime
 
 # ==========================================
-# CONEXIÓN IDÉNTICA A TU APP QUE FUNCIONA
+# CONFIGURACIÓN COMPLETA DE TU APP VÁLIDA
 # ==========================================
-SUPABASE_URL = "https://supabase.co" 
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
+RUTA_LOGO = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "logo_mahjong_madrid.png"
+)
+st.set_page_config(
+    page_title="Liga Mahjong Madrid",
+    page_icon=RUTA_LOGO if os.path.exists(RUTA_LOGO) else "🀄",
+    layout="centered"
+)
+SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-HEADERS_LECTURA = {
+# Cabeceras estándar usando tu clave secreta de las Secrets
+HEADERS_BASE = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}"
 }
 
-st.set_page_config(page_title="Introducir Partidas - Liga Mahjong Madrid", page_icon="🎴")
-st.title("🀄 Introducir Nueva Partida")
+st.markdown(""" 
+<style> 
+/* ========================================================= 
+   MAHJONG MADRID - DISEÑO LIMPIO Y RESPONSIVE 
+   Escritorio y móvil se diseñan por separado mediante media queries. 
+========================================================= */ 
+* { box-sizing: border-box; } 
+ 
+[data-testid="stSidebar"], 
+[data-testid="stSidebarCollapsedControl"] { 
+    display: none !important; 
+} 
+ 
+.stApp { background: #ffffff; } 
+ 
+.block-container { 
+    width: 100% !important; 
+    max-width: 1100px !important; 
+    margin: 0 auto !important; 
+    padding: 1.25rem 1.25rem 2.5rem !important; 
+} 
+ 
+[data-testid="stAppViewContainer"] .main, 
+[data-testid="stAppViewContainer"] .block-container { 
+    overflow-x: hidden !important; 
+} 
+ 
+h1, h2, h3 { color: #151515 !important; } 
+h1 { font-size: 2rem !important; font-weight: 800 !important; line-height: 1.1 !important; } 
+h2 { font-size: 1.4rem !important; } 
+h3 { font-size: 1.1rem !important; } 
+ 
+/* Botones normales: compactos en escritorio */ 
+.stButton > button { 
+    width: 100% !important; 
+    min-height: 40px !important; 
+    height: auto !important; 
+    padding: 6px 9px !important; 
+    border-radius: 8px !important; 
+    border: 1px solid #d6d6d6 !important; 
+    background: #ffffff !important; 
+    color: #151515 !important; 
+    font-size: .90rem !important; 
+    font-weight: 600 !important; 
+    line-height: 1.1 !important; 
+    box-shadow: none !important; 
+} 
+.stButton > button:hover { 
+    border-color: #b40000 !important; 
+    color: #b40000 !important; 
+} 
+</style> 
+""", unsafe_allow_html=True)
+
+st.title("🀄 Registrar Nueva Partida")
 
 # ==========================================
-# FUNCIONES NATIVAS DE CONSULTA Y ENVÍO
+# 1. LEER JUGADORES (Con tu método exacto que va bien)
 # ==========================================
-def obtener_datos(endpoint):
-    """Lee datos de Supabase usando tu método exacto que va bien."""
-    try:
-        url = f"{SUPABASE_URL}/{endpoint}"
-        req = urllib.request.Request(url, headers=HEADERS_LECTURA, method="GET")
-        with urllib.request.urlopen(req) as response:
-            return json.loads(response.read().decode())
-    except Exception as e:
-        st.error(f"Error al leer de Supabase ({endpoint}): {e}")
-        return []
-
-def insertar_datos(endpoint, payload, usar_retorno=False):
-    """Envía los datos a Supabase adaptando las cabeceras según el caso."""
-    try:
-        url = f"{SUPABASE_URL}/{endpoint}"
-        data_json = json.dumps(payload).encode("utf-8")
-        
-        cabeceras = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json"
-        }
-        # Solo pedimos el retorno del ID para la cabecera de la partida
-        if usar_retorno:
-            cabeceras["Prefer"] = "return=representation"
-            
-        req = urllib.request.Request(url, data=data_json, headers=cabeceras, method="POST")
-        with urllib.request.urlopen(req) as response:
-            res_body = response.read().decode()
-            return json.loads(res_body) if res_body else True
-    except urllib.error.HTTPError as e:
-        # Controlamos códigos de éxito HTTP estándar de Postgres (200, 201, 204)
-        if e.code in (200, 201, 204):
-            res_body = e.read().decode()
-            return json.loads(res_body) if res_body else True
-        else:
-            res_err = e.read().decode()
-            st.error(f"Error HTTP {e.code} en '{endpoint}': {res_err}")
-            return None
-    except Exception as e:
-        st.error(f"Error inesperado al insertar en '{endpoint}': {e}")
-        return None
+lista_jugadores = []
+try:
+    url_j = f"{SUPABASE_URL}/jugadores?select=id,nombre,nombre_real&order=nombre.asc"
+    req_j = urllib.request.Request(url_j, headers=HEADERS_BASE, method="GET")
+    with urllib.request.urlopen(req_j) as resp_j:
+        lista_jugadores = json.loads(resp_j.read().decode())
+except Exception as e:
+    st.error(f"Error al cargar jugadores: {e}")
 
 # ==========================================
-# CARGA DE DATOS Y CONCATENACIÓN DE NOMBRES
+# 2. CALCULAR MAX ID DE RESULTADOS (Para solucionar el error 409 de Postgres)
 # ==========================================
-# Traemos jugadores usando tu conexión nativa
-lista_jugadores = obtener_datos("jugadores?select=id,nombre,nombre_real&order=nombre.asc")
+max_id_resultados = 0
+try:
+    url_m = f"{SUPABASE_URL}/resultados_partidas?select=id&order=id.desc&limit=1"
+    req_m = urllib.request.Request(url_m, headers=HEADERS_BASE, method="GET")
+    with urllib.request.urlopen(req_m) as resp_m:
+        res_m = json.loads(resp_m.read().decode())
+        if res_m and len(res_m) > 0:
+            max_id_resultados = int(res_m[0]["id"])
+except Exception:
+    max_id_resultados = 0
 
+# Procesa la lista de jugadores y fuerza el Concat Nombre (Nombre Real)
 if not lista_jugadores:
-    st.warning("No se pudieron recuperar los jugadores. Revisa las credenciales de tu archivo Secrets.")
+    st.warning("No se pudieron recuperar los jugadores de la base de datos.")
     st.stop()
 
 dict_jugadores = {}
 nombres_para_combo = []
-
 for j in lista_jugadores:
-    nombre = j.get("nombre") or ""
-    nombre_real = j.get("nombre_real") or ""
-    
-    # Concatenamos siempre que exista un nombre real válido
-    if nombre_real and nombre_real.strip() != "":
-        nombre_mostrar = f"{nombre} ({nombre_real})"
-    else:
-        nombre_mostrar = nombre
-        
+    n = j.get("nombre") or ""
+    nr = j.get("nombre_real") or ""
+    nombre_mostrar = f"{n} ({nr})" if nr else n
     dict_jugadores[nombre_mostrar] = j["id"]
     nombres_para_combo.append(nombre_mostrar)
 
 # ==========================================
-# FORMULARIO DE INTRODUCCIÓN DE DATOS
+# FORMULARIO VISUAL DE INTRODUCCIÓN
 # ==========================================
-with st.form("formulario_alta_partida", clear_on_submit=False):
-    st.subheader("1. Datos de la Mesa")
+with st.form("formulario_alta_partidas", clear_on_submit=False):
+    st.subheader("1. Datos Generales de la Partida")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -104,56 +138,55 @@ with st.form("formulario_alta_partida", clear_on_submit=False):
         temporada = st.text_input("Temporada:", value="Oct 2026 - Sept 2027", disabled=True)
         
     fecha = st.date_input("Fecha de la partida:", datetime.today())
-    n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=25, value=1, step=1)
+    n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=20, value=1, step=1)
     
-    # Identificador automatizado según tus requerimientos
     fecha_str = fecha.strftime("%Y%m%d")
     nombre_partida_auto = f"{tipo_juego}-{fecha_str}-Mesa {n_mesa}"
-    st.caption(f"Identificador autogenerado: **{nombre_partida_auto}**")
+    st.caption(f"Identificador automático: **{nombre_partida_auto}**")
     
     st.markdown("---")
-    st.subheader("2. Posiciones y Puntuaciones")
+    st.subheader("2. Resultados de los Jugadores")
     
     num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
-    st.info("Introduce los resultados por orden estricto de clasificación (del 1º al último).")
+    st.info("Introduce los jugadores por orden estricto de clasificación: del 1º arriba hasta el último abajo.")
     
     jugadores_seleccionados = []
     puntuaciones = []
     
     for i in range(int(num_jugadores)):
-        st.markdown(f"**Clasificado {i+1}º**")
+        st.markdown(f"**Posición {i+1}**")
         c1, c2 = st.columns(2)
         
         with c1:
             idx_defecto = min(i, len(nombres_para_combo) - 1)
             jugador = st.selectbox(
-                f"Selecciona al jugador para el puesto {i+1}:", 
+                f"Selecciona al jugador {i+1}:", 
                 nombres_para_combo, 
                 index=idx_defecto, 
-                key=f"combo_jugador_{i}"
+                key=f"jugador_{i}"
             )
             jugadores_seleccionados.append(jugador)
             
         with c2:
             puntos = st.number_input(
-                f"Puntuación del puesto {i+1}:", 
+                f"Puntuación {i+1}:", 
                 value=0, 
                 step=100 if tipo_juego == "RIICHI" else 1, 
-                key=f"puntos_jugador_{i}"
+                key=f"puntos_{i}"
             )
             puntuaciones.append(puntos)
 
-    enviar = st.form_submit_button("Guardar Partida y Resultados Completo")
+    enviar = st.form_submit_button("Guardar Partida y Resultados")
 
 # ==========================================
-# PROCESAMIENTO Y ENVÍO CRUZADO
+# 3. PROCESAMIENTO Y ENVÍO A SUPABASE
 # ==========================================
 if enviar:
     if len(jugadores_seleccionados) != len(set(jugadores_seleccionados)):
-        st.error("Error: No puedes seleccionar al mismo jugador en varias posiciones de la misma mesa.")
+        st.error("Error: No puedes duplicar al mismo jugador en varias posiciones.")
         st.stop()
         
-    # PASO A: Creamos el registro en la tabla 'partidas'
+    # PASO A: Crear la partida en la tabla 'partidas'
     datos_partida = {
         "fecha": str(fecha),
         "tipo_juego": tipo_juego,
@@ -161,44 +194,55 @@ if enviar:
         "temporada": "Oct 2026 - Sept 2027"
     }
     
-    with st.spinner("Registrando cabecera de la partida..."):
-        res_partida = insertar_datos("partidas", datos_partida, usar_retorno=True)
+    partida_guardada = False
+    partida_id_generado = None
+    
+    try:
+        url_p = f"{SUPABASE_URL}/partidas"
+        headers_p = {**HEADERS_BASE, "Content-Type": "application/json", "Prefer": "return=representation"}
+        req_p = urllib.request.Request(url_p, data=json.dumps(datos_partida).encode("utf-8"), headers=headers_p, method="POST")
+        with urllib.request.urlopen(req_p) as resp_p:
+            res_p = json.loads(resp_p.read().decode())
+            # Extrae el objeto tanto si es una lista con un elemento como si es un dict directo
+            registro_partida = res_p[0] if isinstance(res_p, list) and len(res_p) > 0 else res_p
+            partida_id_generado = registro_partida.get("id")
+            partida_guardada = True
+    except Exception as e:
+        st.error(f"Error al guardar la cabecera de la partida: {e}")
+
+    # PASO B: Guardar los resultados en 'resultados_partidas' usando el ID correlativo manual
+    if partida_guardada and partida_id_generado:
+        st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
         
-    if res_partida:
-        # Extraemos el ID autogenerado de la partida de forma segura
-        item_partida = res_partida if isinstance(res_partida, list) and len(res_partida) > 0 else [res_partida]
-        partida_id_generado = item_partida[0].get("id") if isinstance(item_partida[0], dict) else None
-        
-        if partida_id_generado:
-            st.success(f"✓ Cabecera de partida guardada (ID: {partida_id_generado})")
-            
-            # PASO B: Buscamos el ID máximo actual de resultados_partidas para prevenir el error 409
-            max_id_data = obtener_datos("resultados_partidas?select=id&order=id.desc&limit=1")
-            max_id_actual = int(max_id_data[0]["id"]) if max_id_data and len(max_id_data) > 0 else 0
-            
-            # PASO C: Insertar desgloses de los jugadores uno a uno de manera limpia
-            exito_total = True
-            with st.spinner("Guardando puntuaciones individuales..."):
-                for i in range(int(num_jugadores)):
-                    nombre_visual = jugadores_seleccionados[i]
-                    id_jugador_real = dict_jugadores[nombre_visual]
+        exito_jugadores = True
+        with st.spinner("Guardando las puntuaciones individuales..."):
+            for i in range(int(num_jugadores)):
+                nombre_visual = jugadores_seleccionados[i]
+                id_jugador_real = dict_jugadores[nombre_visual] # Recupera el ID numérico correcto del combo
+                puntos_jugador = puntuaciones[i]
+                posicion_ranking = i + 1
+                
+                # Asignamos manualmente el ID correlativo siguiente para sortear el error 409
+                nuevo_id_resultado = max_id_resultados + 1 + i
+                
+                datos_resultado = {
+                    "id": nuevo_id_resultado,
+                    "partida_id": partida_id_generado,
+                    "jugador_id": id_jugador_real,
+                    "posicion": posicion_ranking,
+                    "puntuacion": puntos_jugador
+                }
+                
+                try:
+                    url_r = f"{SUPABASE_URL}/resultados_partidas"
+                    headers_r = {**HEADERS_BASE, "Content-Type": "application/json"}
+                    req_r = urllib.request.Request(url_r, data=json.dumps(datos_resultado).encode("utf-8"), headers=headers_r, method="POST")
+                    with urllib.request.urlopen(req_r) as resp_r:
+                        pass
+                except Exception as e:
+                    exito_jugadores = False
+                    st.error(f"Error guardando el resultado del jugador {nombre_visual}: {e}")
                     
-                    datos_resultado = {
-                        "id": max_id_actual + 1 + i,  # Secuenciación manual garantizada sin saltos
-                        "partida_id": partida_id_generado,
-                        "jugador_id": id_jugador_real,
-                        "posicion": i + 1,
-                        "puntuacion": puntuaciones[i]
-                    }
-                    
-                    res_jugador = insertar_datos("resultados_partidas", datos_resultado, usar_prefer=False)
-                    if not res_jugador:
-                        exito_total = False
-                        
-            if exito_total:
-                st.success(f"✓ ¡Mesa guardada por completo! Partida e historial vinculados con éxito.")
-                st.balloons()
-        else:
-            st.error("No se pudo obtener el ID de la partida generada por Supabase.")
-    else:
-        st.error("Error al registrar la partida en la base de datos.")
+        if exito_jugadores:
+            st.success(f"✓ ¡Todos los {num_jugadores} resultados se han enlazado y guardado correctamente!")
+            st.balloons()
