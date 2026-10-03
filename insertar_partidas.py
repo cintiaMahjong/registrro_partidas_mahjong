@@ -20,7 +20,7 @@ st.set_page_config(
     page_icon=RUTA_LOGO if os.path.exists(RUTA_LOGO) else "🀄",
     layout="centered"
 )
-SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
+SUPABASE_URL = "https://supabase.co" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 # Cabeceras estándar usando tu clave secreta de las Secrets
@@ -33,7 +33,6 @@ st.markdown("""
 <style> 
 /* ========================================================= 
    MAHJONG MADRID - DISEÑO LIMPIO Y RESPONSIVE 
-   Escritorio y móvil se diseñan por separado mediante media queries. 
 ========================================================= */ 
 * { box-sizing: border-box; } 
  
@@ -86,7 +85,7 @@ h3 { font-size: 1.1rem !important; }
 st.title("🀄 Registrar Nueva Partida")
 
 # ==========================================
-# 1. LEER JUGADORES (Con tu método exacto que va bien)
+# 1. LEER JUGADORES
 # ==========================================
 lista_jugadores = []
 try:
@@ -98,7 +97,7 @@ except Exception as e:
     st.error(f"Error al cargar jugadores: {e}")
 
 # ==========================================
-# 2. CALCULAR MAX ID DE RESULTADOS (Para solucionar el error 409 de Postgres)
+# 2. CALCULAR MAX ID DE RESULTADOS
 # ==========================================
 max_id_resultados = 0
 try:
@@ -111,7 +110,6 @@ try:
 except Exception:
     max_id_resultados = 0
 
-# Procesa la lista de jugadores y fuerza el Concat Nombre (Nombre Real)
 if not lista_jugadores:
     st.warning("No se pudieron recuperar los jugadores de la base de datos.")
     st.stop()
@@ -126,19 +124,34 @@ for j in lista_jugadores:
     nombres_para_combo.append(nombre_mostrar)
 
 # ==========================================
+# CONTROLES INTERACTIVOS (FUERA DEL FORMULARIO)
+# ==========================================
+st.subheader("1. Configuración de la Partida")
+
+col1, col2 = st.columns(2)
+with col1:
+    # Al cambiar de modo, forzamos el refresco inmediato de la UI
+    tipo_juego = st.radio("Tipo de Juego:", ["RIICHI", "MCR"], horizontal=True, key="tipo_juego_radio")
+with col2:
+    if tipo_juego == "RIICHI":
+        num_jugadores = 4
+        st.write("Número de jugadores: **4** (Fijo para RIICHI)")
+    else:
+        # Si es MCR habilitamos la opción dinámica entre 4 y 5 jugadores
+        num_jugadores = st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
+
+# ==========================================
 # FORMULARIO VISUAL DE INTRODUCCIÓN
 # ==========================================
 with st.form("formulario_alta_partidas", clear_on_submit=False):
-    st.subheader("1. Datos Generales de la Partida")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        tipo_juego = st.radio("Tipo de Juego:", ["RIICHI", "MCR"], horizontal=True)
-    with col2:
+    col_temp, col_mesa = st.columns(2)
+    with col_temp:
         temporada = st.text_input("Temporada:", value="Oct 2026 - Sept 2027", disabled=True)
+    with col_mesa:
+        n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=20, value=1, step=1)
         
     fecha = st.date_input("Fecha de la partida:", datetime.today())
-    n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=20, value=1, step=1)
     
     fecha_str = fecha.strftime("%Y%m%d")
     nombre_partida_auto = f"{tipo_juego}-{fecha_str}-Mesa {n_mesa}"
@@ -146,13 +159,12 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
     
     st.markdown("---")
     st.subheader("2. Resultados de los Jugadores")
-    
-    num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
     st.info("Introduce los jugadores por orden estricto de clasificación: del 1º arriba hasta el último abajo.")
     
     jugadores_seleccionados = []
     puntuaciones = []
     
+    # Genera dinámicamente 4 o 5 filas según lo seleccionado arriba
     for i in range(int(num_jugadores)):
         st.markdown(f"**Posición {i+1}**")
         c1, c2 = st.columns(2)
@@ -203,26 +215,24 @@ if enviar:
         req_p = urllib.request.Request(url_p, data=json.dumps(datos_partida).encode("utf-8"), headers=headers_p, method="POST")
         with urllib.request.urlopen(req_p) as resp_p:
             res_p = json.loads(resp_p.read().decode())
-            # Extrae el objeto tanto si es una lista con un elemento como si es un dict directo
             registro_partida = res_p[0] if isinstance(res_p, list) and len(res_p) > 0 else res_p
             partida_id_generado = registro_partida.get("id")
             partida_guardada = True
     except Exception as e:
         st.error(f"Error al guardar la cabecera de la partida: {e}")
 
-    # PASO B: Guardar los resultados en 'resultados_partidas' usando el ID correlativo manual
+    # PASO B: Guardar los resultados individuales dinámicamente (funciona para 4 o 5)
     if partida_guardada and partida_id_generado:
-        st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
+        st.success(f"✓ Cabecera de la partida guardada con éxito (ID: {partida_id_generado})")
         
         exito_jugadores = True
         with st.spinner("Guardando las puntuaciones individuales..."):
             for i in range(int(num_jugadores)):
                 nombre_visual = jugadores_seleccionados[i]
-                id_jugador_real = dict_jugadores[nombre_visual] # Recupera el ID numérico correcto del combo
+                id_jugador_real = dict_jugadores[nombre_visual]
                 puntos_jugador = puntuaciones[i]
                 posicion_ranking = i + 1
                 
-                # Asignamos manualmente el ID correlativo siguiente para sortear el error 409
                 nuevo_id_resultado = max_id_resultados + 1 + i
                 
                 datos_resultado = {
