@@ -47,8 +47,8 @@ def insertar_registro(tabla, datos):
             res_body = response.read().decode()
             return json.loads(res_body)
     except urllib.error.HTTPError as e:
-        # CORREGIDO: Verificamos los códigos correctos de creación exitosa en Supabase
-        if e.code in:
+        # CORRECCIÓN DE SINTAXIS SEGURA SIN CORCHETES
+        if e.code == 200 or e.code == 201:
             res_body = e.read().decode()
             return json.loads(res_body)
         else:
@@ -85,7 +85,7 @@ with st.form("formulario_partida", clear_on_submit=False):
     fecha = st.date_input("Fecha de la partida:", datetime.today())
     
     # Automatización del nombre para evitar errores tipográficos
-    col_aux1, col_aux2 = st.columns([3, 1])
+    col_aux1, col_aux2 = st.columns(2)
     with col_aux1:
         n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=20, value=1, step=1)
     
@@ -151,10 +151,13 @@ if enviar:
     with st.spinner("Guardando los datos de la partida..."):
         respuesta_partida = insertar_registro("partidas", datos_partida)
         
-    # Validamos que Supabase devuelva la lista/objeto correcto con los datos
     if respuesta_partida:
-        # Dependiendo del retorno exacto, extraemos el diccionario
-        registro_partida = respuesta_partida[0] if isinstance(respuesta_partida, list) else respuesta_partida
+        # Si Supabase nos devuelve una lista con el objeto, extraemos el primer elemento
+        if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0:
+            registro_partida = respuesta_partida[0]
+        else:
+            registro_partida = respuesta_partida
+            
         partida_id_generado = registro_partida.get("id")
         
         if partida_id_generado:
@@ -164,7 +167,7 @@ if enviar:
             for i in range(int(num_jugadores)):
                 nombre_jugador = jugadores_seleccionados[i]
                 jugador_id = dict_jugadores[nombre_jugador]
-                puntos_jugador = puntuaciones[i]
+                puntos_jugador = puntos = puntuaciones[i]
                 posicion_ranking = i + 1
                 
                 registros_resultados.append({
