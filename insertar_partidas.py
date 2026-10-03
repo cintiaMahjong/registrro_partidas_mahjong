@@ -7,11 +7,10 @@ from datetime import datetime
 # ==========================================
 # CONFIGURACIÓN DE SUPABASE
 # ==========================================
-SUPABASE_URL = "https://supabase.co"
+SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
 # IMPORTANTE: Cambia esto por tu clave de Supabase. 
 # Si tienes políticas RLS estrictas, usa la clave 'service_role'.
-SUPABASE_KEY = "TU_SUPABASE_ANON_OR_SERVICE_KEY" 
-
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
