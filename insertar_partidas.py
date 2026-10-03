@@ -29,7 +29,7 @@ HEADERS_BASE = {
     "Authorization": f"Bearer {SUPABASE_KEY}"
 }
 
-st.markdown(""" 
+
 st.markdown(""" 
 <style> 
 /* ========================================================= 
