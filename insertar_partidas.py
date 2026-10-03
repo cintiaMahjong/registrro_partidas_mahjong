@@ -147,14 +147,18 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
     st.markdown("---")
     st.subheader("2. Resultados de los Jugadores")
     
-    # CAMBIO AQUÍ: Se evalúa correctamente cuántos inputs pintar
-    num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
+    # --- CAMBIO AQUÍ: Permitir 4 o 5 jugadores dinámicamente si es MCR ---
+    if tipo_juego == "RIICHI":
+        num_jugadores = 4
+    else:
+        num_jugadores = st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
+        
     st.info("Introduce los jugadores por orden estricto de clasificación: del 1º arriba hasta el último abajo.")
     
     jugadores_seleccionados = []
     puntuaciones = []
     
-    # CAMBIO AQUÍ: Forzamos a int() para evitar errores de tipo float al generar el rango
+    # Se castea a int() para asegurar que recorra el número exacto de filas (4 o 5)
     for i in range(int(num_jugadores)):
         st.markdown(f"**Posición {i+1}**")
         c1, c2 = st.columns(2)
@@ -205,7 +209,6 @@ if enviar:
         req_p = urllib.request.Request(url_p, data=json.dumps(datos_partida).encode("utf-8"), headers=headers_p, method="POST")
         with urllib.request.urlopen(req_p) as resp_p:
             res_p = json.loads(resp_p.read().decode())
-            # Extrae el objeto tanto si es una lista con un elemento como si es un dict directo
             registro_partida = res_p[0] if isinstance(res_p, list) and len(res_p) > 0 else res_p
             partida_id_generado = registro_partida.get("id")
             partida_guardada = True
@@ -218,7 +221,6 @@ if enviar:
         
         exito_jugadores = True
         with st.spinner("Guardando las puntuaciones individuales..."):
-            # CAMBIO AQUÍ: Envía a Supabase las 4 o 5 filas correspondientes de forma dinámica
             for i in range(int(num_jugadores)):
                 nombre_visual = jugadores_seleccionados[i]
                 id_jugador_real = dict_jugadores[nombre_visual] # Recupera el ID numérico correcto del combo
