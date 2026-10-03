@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 # ==========================================
-# CONFIGURACIÓN DE SUPABASE
+# CONFIGURACIÓN DE SUPABASE (TU URL REAL)
 # ==========================================
 SUPABASE_URL = "https://supabase.co" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
@@ -41,10 +41,12 @@ def obtener_max_id_resultados():
         with urllib.request.urlopen(req) as response:
             res = json.loads(response.read().decode())
             if res and len(res) > 0:
-                return int(res[0]["id"])
+                # Si Supabase devuelve una lista, extraemos el primer elemento
+                if isinstance(res, list):
+                    return int(res[0]["id"])
+                return int(res["id"])
             return 0
     except Exception:
-        # Si la tabla está completamente vacía, empezamos desde 0
         return 0
 
 def insertar_registro(tabla, datos, usar_prefer=True):
@@ -94,7 +96,6 @@ for j in lista_jugadores:
     nombre = j.get("nombre") or ""
     nombre_real = j.get("nombre_real") or ""
     
-    # CORREGIDO: Forzamos el concat siempre para que veas 'Nombre (Nombre Real)' obligatoriamente
     if nombre_real:
         nombre_mostrar = f"{nombre} ({nombre_real})"
     else:
@@ -183,28 +184,33 @@ if enviar:
         respuesta_partida = insertar_registro("partidas", datos_partida, usar_prefer=True)
         
     if respuesta_partida:
-        registro_partida = respuesta_partida if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0 else respuesta_partida
+        # Extraemos correctamente el ID tanto si devuelve lista como diccionario
+        if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0:
+            registro_partida = respuesta_partida[0]
+        else:
+            registro_partida = respuesta_partida
+            
         partida_id_generado = registro_partida.get("id") if isinstance(registro_partida, dict) else None
         
         if partida_id_generado:
             st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
             
-            # NUEVO: Consultamos en tiempo real el ID máximo actual de resultados_partidas
+            # Buscamos el ID máximo real en la tabla resultados_partidas
             max_id_actual = obtener_max_id_resultados()
             
             exito_jugadores = True
             with st.spinner("Guardando las puntuaciones de cada jugador..."):
                 for i in range(int(num_jugadores)):
                     nombre_visual = jugadores_seleccionados[i]
-                    jugador_id = dict_jugadores[nombre_visual] # Recupera el ID correcto del combo
+                    jugador_id = dict_jugadores[nombre_visual] 
                     puntos_jugador = puntuaciones[i]
                     posicion_ranking = i + 1
                     
-                    # Asignamos de forma explícita el id incrementado secuencialmente
+                    # Generamos el siguiente ID correlativo consecutivo
                     nuevo_id_resultado = max_id_actual + 1 + i
                     
                     datos_resultado = {
-                        "id": nuevo_id_resultado, # Enviado explícitamente para evitar el error 409
+                        "id": nuevo_id_resultado,
                         "partida_id": partida_id_generado,
                         "jugador_id": jugador_id,
                         "posicion": posicion_ranking,
@@ -216,7 +222,7 @@ if enviar:
                         exito_jugadores = False
                         
             if exito_jugadores:
-                st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente sin colisiones!")
+                st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
                 st.balloons()
         else:
             st.error("La respuesta de la partida no devolvió un ID válido.")
