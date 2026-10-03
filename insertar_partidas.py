@@ -8,15 +8,12 @@ from datetime import datetime
 # ==========================================
 # CONFIGURACIÓN DE SUPABASE
 # ==========================================
-SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
+SUPABASE_URL = "https://supabase.co" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
 
-# Cabeceras estándar compatibles con tu base de datos
-HEADERS = {
+HEADERS_BASE = {
     "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
+    "Authorization": f"Bearer {SUPABASE_KEY}"
 }
 
 st.set_page_config(page_title="Introducir Partidas - Liga Mahjong Madrid", page_icon="🎴")
@@ -25,19 +22,31 @@ st.title("🀄 Introducir Nueva Partida")
 # ==========================================
 # FUNCIONES DE CONEXIÓN A LA BASE DE DATOS
 # ==========================================
-# AJUSTADO: Eliminamos el decorador de caché temporalmente para forzar a Streamlit a leer 'nombre_real' de Supabase
 def obtener_jugadores():
-    """Trae la lista de jugadores directamente de la tabla jugadores con los campos del concat."""
+    """Trae la lista de jugadores directamente de la tabla jugadores."""
     try:
         url = f"{SUPABASE_URL}/jugadores?select=id,nombre,nombre_real&order=nombre.asc"
-        req = urllib.request.Request(url, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}, method="GET")
+        req = urllib.request.Request(url, headers=HEADERS_BASE, method="GET")
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read().decode())
     except Exception as e:
         st.error(f"Error al cargar jugadores de la base de datos: {e}")
         return []
 
-# AJUSTADO: Añadimos un parámetro opcional para limpiar la cabecera Prefer al meter los jugadores y evitar fallos
+def obtener_max_id_resultados():
+    """Busca cuál es el ID más alto actualmente en la tabla resultados_partidas."""
+    try:
+        url = f"{SUPABASE_URL}/resultados_partidas?select=id&order=id.desc&limit=1"
+        req = urllib.request.Request(url, headers=HEADERS_BASE, method="GET")
+        with urllib.request.urlopen(req) as response:
+            res = json.loads(response.read().decode())
+            if res and len(res) > 0:
+                return int(res[0]["id"])
+            return 0
+    except Exception:
+        # Si la tabla está completamente vacía, empezamos desde 0
+        return 0
+
 def insertar_registro(tabla, datos, usar_prefer=True):
     """Inserta datos en la tabla correspondiente y captura la respuesta nativa."""
     try:
@@ -78,7 +87,6 @@ if not lista_jugadores:
     st.warning("Cargando base de datos... Si el error persiste, comprueba la clave 'SUPABASE_KEY' en tus Secrets de Streamlit.")
     st.stop()
 
-# Procesamos el concat pedido: Nombre (Nombre Real)
 dict_jugadores = {}
 nombres_para_combo = []
 
@@ -86,7 +94,8 @@ for j in lista_jugadores:
     nombre = j.get("nombre") or ""
     nombre_real = j.get("nombre_real") or ""
     
-    if nombre_real and nombre_real.strip() != "" and nombre_real != nombre:
+    # CORREGIDO: Forzamos el concat siempre para que veas 'Nombre (Nombre Real)' obligatoriamente
+    if nombre_real:
         nombre_mostrar = f"{nombre} ({nombre_real})"
     else:
         nombre_mostrar = nombre
@@ -174,34 +183,42 @@ if enviar:
         respuesta_partida = insertar_registro("partidas", datos_partida, usar_prefer=True)
         
     if respuesta_partida:
-        registro_partida = respuesta_partida[0] if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0 else respuesta_partida
+        registro_partida = respuesta_partida if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0 else respuesta_partida
         partida_id_generado = registro_partida.get("id") if isinstance(registro_partida, dict) else None
         
         if partida_id_generado:
             st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
             
-            registros_resultados = []
-            for i in range(int(num_jugadores)):
-                nombre_visual = jugadores_seleccionados[i]
-                jugador_id = dict_jugadores[nombre_visual]
-                puntos_jugador = puntuaciones[i]
-                posicion_ranking = i + 1
-                
-                registros_resultados.append({
-                    "partida_id": partida_id_generado,
-                    "jugador_id": jugador_id,
-                    "posicion": posicion_ranking,
-                    "puntuacion": puntos_jugador
-                })
-                
-            with st.spinner("Guardando los desgloses de puntuación..."):
-                # AJUSTADO: Cambiamos usar_prefer=False aquí para que Postgres asigne las claves primarias sin errores de duplicación
-                respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados, usar_prefer=False)
-                
-            if respuesta_resultados:
-                st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
+            # NUEVO: Consultamos en tiempo real el ID máximo actual de resultados_partidas
+            max_id_actual = obtener_max_id_resultados()
+            
+            exito_jugadores = True
+            with st.spinner("Guardando las puntuaciones de cada jugador..."):
+                for i in range(int(num_jugadores)):
+                    nombre_visual = jugadores_seleccionados[i]
+                    jugador_id = dict_jugadores[nombre_visual] # Recupera el ID correcto del combo
+                    puntos_jugador = puntuaciones[i]
+                    posicion_ranking = i + 1
+                    
+                    # Asignamos de forma explícita el id incrementado secuencialmente
+                    nuevo_id_resultado = max_id_actual + 1 + i
+                    
+                    datos_resultado = {
+                        "id": nuevo_id_resultado, # Enviado explícitamente para evitar el error 409
+                        "partida_id": partida_id_generado,
+                        "jugador_id": jugador_id,
+                        "posicion": posicion_ranking,
+                        "puntuacion": puntos_jugador
+                    }
+                    
+                    res_indiv = insertar_registro("resultados_partidas", datos_resultado, usar_prefer=False)
+                    if not res_indiv:
+                        exito_jugadores = False
+                        
+            if exito_jugadores:
+                st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente sin colisiones!")
                 st.balloons()
         else:
-            st.error("La respuesta de Supabase no devolvió un ID numérico válido.")
+            st.error("La respuesta de la partida no devolvió un ID válido.")
     else:
-        st.error("No se pudo insertar la partida. Comprueba los permisos de escritura de tu clave de Supabase.")
+        st.error("No se pudo insertar la partida inicial.")
