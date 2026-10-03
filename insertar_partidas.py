@@ -20,7 +20,7 @@ st.set_page_config(
     page_icon=RUTA_LOGO if os.path.exists(RUTA_LOGO) else "🀄",
     layout="centered"
 )
-SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
+SUPABASE_URL = "https://supabase.co" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 # Cabeceras estándar usando tu clave secreta de las Secrets
@@ -125,6 +125,31 @@ for j in lista_jugadores:
     dict_jugadores[nombre_mostrar] = j["id"]
     nombres_para_combo.append(nombre_mostrar)
 
+
+# ==========================================
+# GESTIÓN DE ESTADO PARA REFRESCADO INMEDIATO
+# ==========================================
+if "tipo_juego_guardado" not in st.session_state:
+    st.session_state["tipo_juego_guardado"] = "RIICHI"
+
+tipo_juego = st.radio(
+    "Tipo de Juego:", 
+    ["RIICHI", "MCR"], 
+    index=0 if st.session_state["tipo_juego_guardado"] == "RIICHI" else 1,
+    horizontal=True,
+    key="selector_modalidad"
+)
+
+if tipo_juego != st.session_state["tipo_juego_guardado"]:
+    st.session_state["tipo_juego_guardado"] = tipo_juego
+    st.rerun()
+
+if tipo_juego == "RIICHI":
+    num_jugadores = 4
+else:
+    num_jugadores = st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
+
+
 # ==========================================
 # FORMULARIO VISUAL DE INTRODUCCIÓN
 # ==========================================
@@ -133,7 +158,8 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
     
     col1, col2 = st.columns(2)
     with col1:
-        tipo_juego = st.radio("Tipo de Juego:", ["RIICHI", "MCR"], horizontal=True)
+        st.write(f"Modalidad activa: **{tipo_juego}**")
+        st.write(f"Participantes en mesa: **{int(num_jugadores)}**")
     with col2:
         temporada = st.text_input("Temporada:", value="Oct 2026 - Sept 2027", disabled=True)
         
@@ -146,19 +172,11 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
     
     st.markdown("---")
     st.subheader("2. Resultados de los Jugadores")
-    
-    # EL ÚNICO CAMBIO AQUÍ: Permitir elegir entre 4 o 5 si se selecciona MCR
-    if tipo_juego == "RIICHI":
-        num_jugadores = 4
-    else:
-        num_jugadores = st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
-        
     st.info("Introduce los jugadores por orden estricto de clasificación: del 1º arriba hasta el último abajo.")
     
     jugadores_seleccionados = []
     puntuaciones = []
     
-    # El rango ahora se adapta automáticamente a 4 o a 5 jugadores
     for i in range(int(num_jugadores)):
         st.markdown(f"**Posición {i+1}**")
         c1, c2 = st.columns(2)
@@ -209,7 +227,6 @@ if enviar:
         req_p = urllib.request.Request(url_p, data=json.dumps(datos_partida).encode("utf-8"), headers=headers_p, method="POST")
         with urllib.request.urlopen(req_p) as resp_p:
             res_p = json.loads(resp_p.read().decode())
-            # Extrae el objeto tanto si es una lista con un elemento como si es un dict directo
             registro_partida = res_p[0] if isinstance(res_p, list) and len(res_p) > 0 else res_p
             partida_id_generado = registro_partida.get("id")
             partida_guardada = True
@@ -224,11 +241,10 @@ if enviar:
         with st.spinner("Guardando las puntuaciones individuales..."):
             for i in range(int(num_jugadores)):
                 nombre_visual = jugadores_seleccionados[i]
-                id_jugador_real = dict_jugadores[nombre_visual] # Recupera el ID numérico correcto del combo
+                id_jugador_real = dict_jugadores[nombre_visual]
                 puntos_jugador = puntuaciones[i]
                 posicion_ranking = i + 1
                 
-                # Asignamos manualmente el ID correlativo siguiente para sortear el error 409
                 nuevo_id_resultado = max_id_resultados + 1 + i
                 
                 datos_resultado = {
