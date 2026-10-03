@@ -8,30 +8,30 @@ from datetime import datetime
 # ==========================================
 # CONFIGURACIÓN DE SUPABASE
 # ==========================================
-# CORREGIDO: Nos aseguramos de añadir /rest/v1 al final de la URL para evitar el 404
-SUPABASE_URL = "https://supabase.co" 
+SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
 
+# Cabeceras estándar compatibles con tu base de datos
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=representation"  # Devuelve el objeto creado con su ID autogenerado
+    "Prefer": "return=representation"
 }
 
 st.set_page_config(page_title="Introducir Partidas - Liga Mahjong Madrid", page_icon="🎴")
 st.title("🀄 Introducir Nueva Partida")
 
 # ==========================================
-# FUNCIONES DE CONEXIÓN
+# FUNCIONES DE CONEXIÓN A LA BASE DE DATOS
 # ==========================================
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def obtener_jugadores():
-    """Trae la lista de jugadores pidiendo las columnas necesarias para el concat."""
+    """Trae la lista de jugadores directamente de la tabla jugadores."""
     try:
-        # Pedimos id, nombre y nombre_real de la tabla jugadores ordenados por nombre
+        # Petición GET limpia idéntica al funcionamiento de tu app lectora
         url = f"{SUPABASE_URL}/jugadores?select=id,nombre,nombre_real&order=nombre.asc"
-        req = urllib.request.Request(url, headers=HEADERS, method="GET")
+        req = urllib.request.Request(url, headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}, method="GET")
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read().decode())
     except Exception as e:
@@ -39,7 +39,7 @@ def obtener_jugadores():
         return []
 
 def insertar_registro(tabla, datos):
-    """Inserta datos en Supabase y maneja de forma segura las respuestas de urllib."""
+    """Inserta datos en la tabla correspondiente y captura la respuesta nativa."""
     try:
         url = f"{SUPABASE_URL}/{tabla}"
         data_json = json.dumps(datos).encode("utf-8")
@@ -53,7 +53,8 @@ def insertar_registro(tabla, datos):
             res_body = e.read().decode()
             return json.loads(res_body)
         else:
-            st.error(f"Error HTTP ({e.code}) en tabla '{tabla}': {e.reason}")
+            res_err = e.read().decode()
+            st.error(f"Error en la tabla '{tabla}' (Código {e.code}): {res_err}")
             return None
     except Exception as e:
         st.error(f"Error inesperado al insertar en '{tabla}': {e}")
@@ -65,10 +66,10 @@ def insertar_registro(tabla, datos):
 lista_jugadores = obtener_jugadores()
 
 if not lista_jugadores:
-    st.warning("No se pudieron recuperar los jugadores. Verifica tus Secrets en Streamlit.")
+    st.warning("Cargando base de datos... Si el error persiste, comprueba la clave 'SUPABASE_KEY' en tus Secrets de Streamlit.")
     st.stop()
 
-# Creamos el diccionario mapeando el texto concatenado "Nombre (Nombre Real)" -> ID del jugador
+# Procesamos el concat pedido: Nombre (Nombre Real)
 dict_jugadores = {}
 nombres_para_combo = []
 
@@ -76,7 +77,6 @@ for j in lista_jugadores:
     nombre = j.get("nombre") or ""
     nombre_real = j.get("nombre_real") or ""
     
-    # Hacemos el concat: si tiene nombre_real lo añade entre paréntesis, si no, deja solo el nombre
     if nombre_real and nombre_real != nombre:
         nombre_mostrar = f"{nombre} ({nombre_real})"
     else:
@@ -86,7 +86,7 @@ for j in lista_jugadores:
     nombres_para_combo.append(nombre_mostrar)
 
 # ==========================================
-# FORMULARIO DE ENTRADA
+# FORMULARIO DE ENTRADA VISUAL
 # ==========================================
 with st.form("formulario_partida", clear_on_submit=False):
     st.subheader("1. Datos Generales de la Partida")
@@ -99,26 +99,24 @@ with st.form("formulario_partida", clear_on_submit=False):
         
     fecha = st.date_input("Fecha de la partida:", datetime.today())
     
-    # Automatización del nombre para evitar errores tipográficos
     col_aux1, col_aux2 = st.columns(2)
     with col_aux1:
         n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=20, value=1, step=1)
     
-    # Genera el string automático
     fecha_str = fecha.strftime("%Y%m%d")
     nombre_partida_auto = f"{tipo_juego}-{fecha_str}-Mesa {n_mesa}"
     
     with col_aux2:
         st.write("") 
         st.write("") 
-        st.caption(f"Identificador: **{nombre_partida_auto}**")
+        st.caption(f"Identificador de partida: **{nombre_partida_auto}**")
 
     st.markdown("---")
     st.subheader("2. Resultados de los Jugadores")
     
     num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
     
-    st.info("Introduce los jugadores en su orden de clasificación: 1º arriba, luego 2º, 3º...", icon="ℹ️")
+    st.info("Introduce los jugadores en orden de clasificación: el 1º arriba hasta el último abajo.", icon="ℹ️")
     
     jugadores_seleccionados = []
     puntuaciones = []
@@ -167,11 +165,8 @@ if enviar:
         respuesta_partida = insertar_registro("partidas", datos_partida)
         
     if respuesta_partida:
-        if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0:
-            registro_partida = respuesta_partida[0]
-        else:
-            registro_partida = respuesta_partida
-            
+        # Extraemos el registro de la partida creada
+        registro_partida = respuesta_partida[0] if isinstance(respuesta_partida, list) else respuesta_partida
         partida_id_generado = registro_partida.get("id")
         
         if partida_id_generado:
@@ -180,7 +175,7 @@ if enviar:
             registros_resultados = []
             for i in range(int(num_jugadores)):
                 nombre_visual = jugadores_seleccionados[i]
-                jugador_id = dict_jugadores[nombre_visual] # Recuperamos el ID numérico real
+                jugador_id = dict_jugadores[nombre_visual]
                 puntos_jugador = puntuaciones[i]
                 posicion_ranking = i + 1
                 
@@ -198,6 +193,6 @@ if enviar:
                 st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
                 st.balloons()
         else:
-            st.error("La respuesta de Supabase no contenía un ID válido.")
+            st.error("La respuesta de Supabase no devolvió un ID numérico válido.")
     else:
-        st.error("No se pudo obtener una respuesta correcta de Supabase al crear la partida.")
+        st.error("No se pudo insertar la partida. Comprueba los permisos de escritura de tu clave de Supabase.")
