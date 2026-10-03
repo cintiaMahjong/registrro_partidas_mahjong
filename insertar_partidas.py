@@ -8,23 +8,23 @@ from datetime import datetime
 # CONFIGURACIÓN DE SUPABASE
 # ==========================================
 SUPABASE_URL = "https://gauqwlrsmxynqcokblaw.supabase.co/rest/v1" 
-# IMPORTANTE: Cambia esto por tu clave de Supabase. 
-# Si tienes políticas RLS estrictas, usa la clave 'service_role'.
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
+
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=representation"  # Permite que Supabase devuelva el ID creado inmediatamente
+    # Cambiamos a 'return=representation' combinado con 'exact' o manejado de forma que devuelva objeto puro
+    "Prefer": "return=representation"  
 }
 
 st.set_page_config(page_title="Introducir Partidas - Liga Mahjong Madrid", page_icon="🎴")
 st.title("🀄 Introducir Nueva Partida")
 
 # ==========================================
-# FUNCIONES DE CONEXIÓN (URLLIB)
+# FUNCIONES DE CONEXIÓN CORREGIDAS PARA URLLIB
 # ==========================================
-@st.cache_data(ttl=60)  # Cachea los jugadores 1 minuto para evitar llamadas constantes
+@st.cache_data(ttl=60)
 def obtener_jugadores():
     """Trae la lista de jugadores ordenados por nombre."""
     try:
@@ -37,15 +37,27 @@ def obtener_jugadores():
         return []
 
 def insertar_registro(tabla, datos):
-    """Inserta datos en la tabla indicada y devuelve la respuesta JSON."""
+    """Inserta datos en Supabase sorteando el problema del código 201 de urllib."""
     try:
         url = f"{SUPABASE_URL}/{tabla}"
         data_json = json.dumps(datos).encode("utf-8")
         req = urllib.request.Request(url, data=data_json, headers=HEADERS, method="POST")
+        
+        # urllib lanza una excepción HTTPError si el código es 201 (Created)
+        # Lo capturamos de forma segura para leer los datos devueltos
         with urllib.request.urlopen(req) as response:
-            return json.loads(response.read().decode())
+            res_body = response.read().decode()
+            return json.loads(res_body)
+    except urllib.error.HTTPError as e:
+        # Si es un 201 Created (o 200), leemos el cuerpo del mensaje de todas formas
+        if e.code in:
+            res_body = e.read().decode()
+            return json.loads(res_body)
+        else:
+            st.error(f"Error HTTP ({e.code}) en tabla '{tabla}': {e.reason}")
+            return None
     except Exception as e:
-        st.error(f"Error al insertar en la tabla '{tabla}': {e}")
+        st.error(f"Error inesperado al insertar en '{tabla}': {e}")
         return None
 
 # ==========================================
@@ -54,10 +66,9 @@ def insertar_registro(tabla, datos):
 lista_jugadores = obtener_jugadores()
 
 if not lista_jugadores:
-    st.warning("No se pudieron recuperar los jugadores. Verifica la configuración de Supabase.")
+    st.warning("No se pudieron recuperar los jugadores. Verifica tus Secrets en Streamlit.")
     st.stop()
 
-# Crear un diccionario para mapear "Nombre del Jugador" -> ID
 dict_jugadores = {j["nombre"]: j["id"] for j in lista_jugadores}
 nombres_para_combo = list(dict_jugadores.keys())
 
@@ -71,7 +82,6 @@ with st.form("formulario_partida", clear_on_submit=False):
     with col1:
         tipo_juego = st.radio("Tipo de Juego:", ["RIICHI", "MCR"], horizontal=True)
     with col2:
-        # Temporada fijada según tus instrucciones
         temporada = st.text_input("Temporada:", value="Oct 2026 - Sept 2027", disabled=True)
         
     fecha = st.date_input("Fecha de la partida:", datetime.today())
@@ -80,22 +90,16 @@ with st.form("formulario_partida", clear_on_submit=False):
     st.markdown("---")
     st.subheader("2. Resultados de los Jugadores")
     
-    # Determinar dinámicamente la cantidad de jugadores permitidos
     num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
     
-    st.info("Introduce los jugadores y sus puntuaciones. Las posiciones se asignarán automáticamente según el orden (1º al último).")
-    
-    # Listas vacías para almacenar las selecciones del formulario
     jugadores_seleccionados = []
     puntuaciones = []
     
-    # Generar dinámicamente las entradas del 1º al 4º o 5º puesto
     for i in range(int(num_jugadores)):
         st.markdown(f"**Posición {i+1}**")
-        c1, c2 = st.columns([2, 1])
+        c1, c2 = st.columns(2)
         
         with c1:
-            # Ponemos un índice por defecto diferente para cada combo para agilizar la entrada
             idx_defecto = min(i, len(nombres_para_combo) - 1)
             jugador = st.selectbox(
                 f"Selecciona al jugador {i+1}:", 
@@ -114,14 +118,12 @@ with st.form("formulario_partida", clear_on_submit=False):
             )
             puntuaciones.append(puntos)
 
-    # Botón de envío del formulario
     enviar = st.form_submit_button("Guardar Partida y Resultados en Supabase")
 
 # ==========================================
 # PROCESAMIENTO Y ENVÍO A SUPABASE
 # ==========================================
 if enviar:
-    # --- Validaciones previas ---
     if not nombre_partida.strip():
         st.error("Por favor, introduce un nombre para la partida.")
         st.stop()
@@ -130,31 +132,27 @@ if enviar:
         st.error("Error: No puedes seleccionar al mismo jugador en múltiples posiciones.")
         st.stop()
         
-    # --- Paso 1: Insertar en la tabla 'partidas' ---
     datos_partida = {
         "fecha": str(fecha),
         "tipo_juego": tipo_juego,
         "nombre": nombre_partida.strip(),
-        "temporada": "Oct 2026 - Sept 2027"  # La forzamos en el backend también
+        "temporada": "Oct 2026 - Sept 2027"
     }
     
     with st.spinner("Guardando los datos de la partida..."):
         respuesta_partida = insertar_registro("partidas", datos_partida)
         
     if respuesta_partida and len(respuesta_partida) > 0:
-        # Extraemos el ID generado automáticamente por Postgres
+        # Supabase devuelve una lista con el registro creado cuando se usa return=representation
         partida_id_generado = respuesta_partida[0]["id"]
         st.success(f"✓ Partida guardada con éxito (ID: {partida_id_generado})")
         
-        # --- Paso 2: Insertar en la tabla 'resultados_partidas' ---
         registros_resultados = []
-        
-        # Recorremos el orden que ingresó el usuario
         for i in range(int(num_jugadores)):
             nombre_jugador = jugadores_seleccionados[i]
             jugador_id = dict_jugadores[nombre_jugador]
             puntos_jugador = puntuaciones[i]
-            posicion_ranking = i + 1  # El primero tiene posición 1, el segundo 2...
+            posicion_ranking = i + 1
             
             registros_resultados.append({
                 "partida_id": partida_id_generado,
@@ -167,7 +165,7 @@ if enviar:
             respuesta_resultados = insertar_registro("resultados_partidas", registros_resultados)
             
         if respuesta_resultados:
-            st.success(f"✓ ¡Todos los {num_jugadores} resultados se han vinculado correctamente!")
+            st.success(f"✓ ¡Todos los {num_jugadores} resultados se han guardado correctamente!")
             st.balloons()
     else:
-        st.error("No se pudo obtener el ID de la partida creada. Los resultados no se guardaron.")
+        st.error("No se pudo obtener la respuesta correcta de Supabase al crear la partida.")
