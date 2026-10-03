@@ -85,7 +85,7 @@ h3 { font-size: 1.1rem !important; }
 st.title("🀄 Registrar Nueva Partida")
 
 # ==========================================
-# 1. LEER JUGADORES
+# 1. LEER JUGADORES (Tu método exacto original)
 # ==========================================
 lista_jugadores = []
 try:
@@ -124,20 +124,18 @@ for j in lista_jugadores:
     nombres_para_combo.append(nombre_mostrar)
 
 # ==========================================
-# CONTROLES INTERACTIVOS (FUERA DEL FORMULARIO)
+# CONTROLES INTERACTIVOS (FUERA DEL FORMULARIO PARA RESPONSIVE)
 # ==========================================
 st.subheader("1. Configuración de la Partida")
 
 col1, col2 = st.columns(2)
 with col1:
-    # Al cambiar de modo, forzamos el refresco inmediato de la UI
-    tipo_juego = st.radio("Tipo de Juego:", ["RIICHI", "MCR"], horizontal=True, key="tipo_juego_radio")
+    tipo_juego = st.radio("Tipo de Juego:", ["RIICHI", "MCR"], horizontal=True)
 with col2:
     if tipo_juego == "RIICHI":
         num_jugadores = 4
-        st.write("Número de jugadores: **4** (Fijo para RIICHI)")
+        st.info("Número de jugadores fijo para RIICHI: 4")
     else:
-        # Si es MCR habilitamos la opción dinámica entre 4 y 5 jugadores
         num_jugadores = st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
 
 # ==========================================
@@ -164,7 +162,7 @@ with st.form("formulario_alta_partidas", clear_on_submit=False):
     jugadores_seleccionados = []
     puntuaciones = []
     
-    # Genera dinámicamente 4 o 5 filas según lo seleccionado arriba
+    # Renderiza dinámicamente 4 o 5 campos según la selección previa
     for i in range(int(num_jugadores)):
         st.markdown(f"**Posición {i+1}**")
         c1, c2 = st.columns(2)
@@ -215,13 +213,14 @@ if enviar:
         req_p = urllib.request.Request(url_p, data=json.dumps(datos_partida).encode("utf-8"), headers=headers_p, method="POST")
         with urllib.request.urlopen(req_p) as resp_p:
             res_p = json.loads(resp_p.read().decode())
+            # Tu extractor original intacto
             registro_partida = res_p[0] if isinstance(res_p, list) and len(res_p) > 0 else res_p
             partida_id_generado = registro_partida.get("id")
             partida_guardada = True
     except Exception as e:
         st.error(f"Error al guardar la cabecera de la partida: {e}")
 
-    # PASO B: Guardar los resultados individuales dinámicamente (funciona para 4 o 5)
+    # PASO B: Guardar los resultados individuales dinámicamente
     if partida_guardada and partida_id_generado:
         st.success(f"✓ Cabecera de la partida guardada con éxito (ID: {partida_id_generado})")
         
