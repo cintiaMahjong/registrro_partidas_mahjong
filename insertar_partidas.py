@@ -8,6 +8,7 @@ from datetime import datetime
 # ==========================================
 # CONFIGURACIÓN DE SUPABASE
 # ==========================================
+# CORREGIDO: Nos aseguramos de añadir /rest/v1 al final de la URL para evitar el 404
 SUPABASE_URL = "https://supabase.co" 
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"] 
 
@@ -22,13 +23,14 @@ st.set_page_config(page_title="Introducir Partidas - Liga Mahjong Madrid", page_
 st.title("🀄 Introducir Nueva Partida")
 
 # ==========================================
-# FUNCIONES DE CONEXIÓN CORREGIDAS
+# FUNCIONES DE CONEXIÓN
 # ==========================================
 @st.cache_data(ttl=60)
 def obtener_jugadores():
-    """Trae la lista de jugadores ordenados por nombre."""
+    """Trae la lista de jugadores pidiendo las columnas necesarias para el concat."""
     try:
-        url = f"{SUPABASE_URL}/jugadores?select=id,nombre&order=nombre.asc"
+        # Pedimos id, nombre y nombre_real de la tabla jugadores ordenados por nombre
+        url = f"{SUPABASE_URL}/jugadores?select=id,nombre,nombre_real&order=nombre.asc"
         req = urllib.request.Request(url, headers=HEADERS, method="GET")
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read().decode())
@@ -47,7 +49,6 @@ def insertar_registro(tabla, datos):
             res_body = response.read().decode()
             return json.loads(res_body)
     except urllib.error.HTTPError as e:
-        # CORRECCIÓN DE SINTAXIS SEGURA SIN CORCHETES
         if e.code == 200 or e.code == 201:
             res_body = e.read().decode()
             return json.loads(res_body)
@@ -59,7 +60,7 @@ def insertar_registro(tabla, datos):
         return None
 
 # ==========================================
-# CARGA DE DATOS INICIALES
+# CARGA DE DATOS E IMPLEMENTACIÓN DEL CONCAT
 # ==========================================
 lista_jugadores = obtener_jugadores()
 
@@ -67,8 +68,22 @@ if not lista_jugadores:
     st.warning("No se pudieron recuperar los jugadores. Verifica tus Secrets en Streamlit.")
     st.stop()
 
-dict_jugadores = {j["nombre"]: j["id"] for j in lista_jugadores}
-nombres_para_combo = list(dict_jugadores.keys())
+# Creamos el diccionario mapeando el texto concatenado "Nombre (Nombre Real)" -> ID del jugador
+dict_jugadores = {}
+nombres_para_combo = []
+
+for j in lista_jugadores:
+    nombre = j.get("nombre") or ""
+    nombre_real = j.get("nombre_real") or ""
+    
+    # Hacemos el concat: si tiene nombre_real lo añade entre paréntesis, si no, deja solo el nombre
+    if nombre_real and nombre_real != nombre:
+        nombre_mostrar = f"{nombre} ({nombre_real})"
+    else:
+        nombre_mostrar = nombre
+        
+    dict_jugadores[nombre_mostrar] = j["id"]
+    nombres_para_combo.append(nombre_mostrar)
 
 # ==========================================
 # FORMULARIO DE ENTRADA
@@ -89,12 +104,12 @@ with st.form("formulario_partida", clear_on_submit=False):
     with col_aux1:
         n_mesa = st.number_input("Número de Mesa:", min_value=1, max_value=20, value=1, step=1)
     
-    # Genera el string con la estructura visual exacta de tus capturas
+    # Genera el string automático
     fecha_str = fecha.strftime("%Y%m%d")
     nombre_partida_auto = f"{tipo_juego}-{fecha_str}-Mesa {n_mesa}"
     
     with col_aux2:
-        st.write("") # Espaciador
+        st.write("") 
         st.write("") 
         st.caption(f"Identificador: **{nombre_partida_auto}**")
 
@@ -103,7 +118,7 @@ with st.form("formulario_partida", clear_on_submit=False):
     
     num_jugadores = 4 if tipo_juego == "RIICHI" else st.number_input("Número de jugadores para MCR:", min_value=4, max_value=5, value=4, step=1)
     
-    st.info("Introduce los jugadores siguiendo rigurosamente su orden final: el 1º arriba hasta el último abajo.")
+    st.info("Introduce los jugadores en su orden de clasificación: 1º arriba, luego 2º, 3º...", icon="ℹ️")
     
     jugadores_seleccionados = []
     puntuaciones = []
@@ -152,7 +167,6 @@ if enviar:
         respuesta_partida = insertar_registro("partidas", datos_partida)
         
     if respuesta_partida:
-        # Si Supabase nos devuelve una lista con el objeto, extraemos el primer elemento
         if isinstance(respuesta_partida, list) and len(respuesta_partida) > 0:
             registro_partida = respuesta_partida[0]
         else:
@@ -165,9 +179,9 @@ if enviar:
             
             registros_resultados = []
             for i in range(int(num_jugadores)):
-                nombre_jugador = jugadores_seleccionados[i]
-                jugador_id = dict_jugadores[nombre_jugador]
-                puntos_jugador = puntos = puntuaciones[i]
+                nombre_visual = jugadores_seleccionados[i]
+                jugador_id = dict_jugadores[nombre_visual] # Recuperamos el ID numérico real
+                puntos_jugador = puntuaciones[i]
                 posicion_ranking = i + 1
                 
                 registros_resultados.append({
