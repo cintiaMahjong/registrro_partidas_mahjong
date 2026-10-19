@@ -263,7 +263,7 @@ else:
 # 3. FORMULARIO VISUAL
 # ==========================================
 
-```python
+
 with st.form(
     "formulario_alta_partidas",
     clear_on_submit=False
