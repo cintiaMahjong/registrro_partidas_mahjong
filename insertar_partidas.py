@@ -285,12 +285,19 @@ with st.form(
             f"**{int(num_jugadores)}**"
         )
 
-    with col2:
+     with col2:
 
-        temporada = st.text_input(
+        # Opciones de temporada disponibles
+        temporadas_disponibles = [
+            "Oct 2026 - Sept 2027",
+            "Torneo 25 Octubre",
+        ]
+
+        # Selector de temporada
+        temporada = st.selectbox(
             "Temporada:",
-            value="Oct 2026 - Sept 2027",
-            disabled=True
+            options=temporadas_disponibles,
+            index=0
         )
 
 
