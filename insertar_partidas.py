@@ -263,6 +263,7 @@ else:
 # 3. FORMULARIO VISUAL
 # ==========================================
 
+```python
 with st.form(
     "formulario_alta_partidas",
     clear_on_submit=False
@@ -285,9 +286,12 @@ with st.form(
             f"**{int(num_jugadores)}**"
         )
 
-     with col2:
+    with col2:
 
-        temporadas_disponibles = [ "Oct 2026 - Sept 2027",  "Torneo 25 Octubre",  ]
+        # Opciones de temporada disponibles
+        temporadas_disponibles = [ "Oct 2026 - Sept 2027",   "Torneo 25 Octubre",  ]
+
+        # Selector de temporada
         temporada = st.selectbox(
             "Temporada:",
             options=temporadas_disponibles,
