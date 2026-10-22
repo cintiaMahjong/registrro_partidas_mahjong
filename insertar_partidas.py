@@ -455,7 +455,7 @@ if enviar:
         "fecha": str(fecha),
         "tipo_juego": tipo_juego,
         "nombre": nombre_partida_auto,
-        "temporada": "Oct 2026 - Sept 2027"
+        "temporada": temporada
     }
 
 
