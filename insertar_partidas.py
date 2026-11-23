@@ -289,7 +289,7 @@ with st.form(
     with col2:
 
         # Opciones de temporada disponibles
-        temporadas_disponibles = [ "Oct 2026 - Sept 2027",   "Torneo 25 Octubre",  ]
+        temporadas_disponibles = [ "Oct 2026 - Sept 2027",   "Torneo Navidad 2026",  ]
 
         # Selector de temporada
         temporada = st.selectbox(
